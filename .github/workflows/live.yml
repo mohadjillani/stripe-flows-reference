@@ -1,0 +1,48 @@
+name: Live
+
+# Manual and nightly, and inert without a key.
+#
+# There is no Stripe account behind this repository, so this workflow has never
+# run. It is here because the live suite is written and would run for anyone who
+# adds STRIPE_SECRET_KEY — and because a repository that only documents how it
+# *would* verify against the real thing should at least ship the wiring.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 4 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    # A scheduled run with no secret would fail every night and train everyone
+    # to ignore the notification.
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: stripedemo
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/stripedemo
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+      STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run migrate
+      - name: Live suite
+        run: npx vitest run test/live
